@@ -31,15 +31,15 @@ export async function GET(request: NextRequest) {
         recentBookingsRaw
       ] = await Promise.all([
         db.event.count(),
-        db.booking.count({ where: { paymentStatus: 'completed' } }),
+        db.booking.count({ where: { paymentStatus: { in: ['completed', 'paid'] } } }),
         db.event.count({ where: { status: 'active' } }),
         db.booking.aggregate({
-          where: { paymentStatus: 'completed' },
+          where: { paymentStatus: { in: ['completed', 'paid'] } },
           _sum: { totalAmount: true }
         }),
         db.booking.count({
           where: {
-            paymentStatus: 'completed',
+            paymentStatus: { in: ['completed', 'paid'] },
             createdAt: {
               gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1)
             }

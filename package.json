@@ -4,7 +4,7 @@
   "description": "Complete mystery events management platform with email system and vouchers",
   "main": "index.js",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/setup-database.js && next dev",
     "build": "node scripts/build-db.js && next build",
     "start": "next start",
     "lint": "next lint",
