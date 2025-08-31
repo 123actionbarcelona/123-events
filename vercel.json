@@ -1,0 +1,25 @@
+{
+  "build": {
+    "env": {
+      "DATABASE_URL": "file:./dev.db"
+    }
+  },
+  "functions": {
+    "app/api/**/*.ts": {
+      "maxDuration": 30
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/vouchers/scheduled",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/notifications/cron",
+      "schedule": "0 8 * * *"
+    }
+  ],
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install"
+}

@@ -1,0 +1,288 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Event {
+  id               String   @id @default(cuid())
+  title            String
+  description      String
+  category         String   // murder, escape, detective, horror
+  imageUrl         String?
+  date             DateTime
+  time             String   // "19:30"
+  duration         Int      // minutos
+  location         String
+  capacity         Int
+  availableTickets Int
+  price            Float    // EUR
+  minTickets       Int      @default(2)  // Número mínimo de tickets por compra
+  maxTickets       Int      @default(10) // Número máximo de tickets por compra
+  status           String   @default("draft") // draft, active, soldout, cancelled
+  calendarEventId  String?  // Google Calendar Event ID
+  
+  // NUEVOS CAMPOS - Plantillas específicas del evento
+  confirmationTemplateId  String?  // ID de plantilla para confirmación de reserva
+  reminderTemplateId     String?  // ID de plantilla para recordatorio de evento
+  voucherTemplateId      String?  // ID de plantilla para vales de este evento
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relaciones existentes
+  bookings         Booking[]
+  giftVouchers     GiftVoucher[] // NUEVO - Vales para evento específico
+  formFields       EventFormField[] // Campos de formulario personalizados
+  
+  // NUEVAS RELACIONES - Plantillas específicas
+  confirmationTemplate   EmailTemplate? @relation("EventConfirmationTemplate", fields: [confirmationTemplateId], references: [id])
+  reminderTemplate      EmailTemplate? @relation("EventReminderTemplate", fields: [reminderTemplateId], references: [id]) 
+  voucherTemplate       EmailTemplate? @relation("EventVoucherTemplate", fields: [voucherTemplateId], references: [id])
+
+  @@map("events")
+}
+
+model Booking {
+  id                String   @id @default(cuid())
+  bookingCode       String   @unique
+  eventId           String
+  customerName      String
+  customerEmail     String
+  customerPhone     String?
+  quantity          Int
+  totalAmount       Float
+  paymentStatus     String   @default("pending") // pending, completed, failed, refunded
+  stripeSessionId   String?
+  confirmationSent  Boolean  @default(false) // Email de confirmación enviado
+  reminderSent      Boolean  @default(false) // Email de recordatorio enviado
+  
+  // NUEVO - Sistema vales regalo (Agosto 2024)
+  paymentMethod     String   @default("card") // card | voucher | mixed
+  voucherAmount     Float?   // Cantidad pagada con voucher
+  stripeAmount      Float?   // Cantidad pagada con tarjeta
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relaciones
+  event             Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tickets           Ticket[]
+  customer          Customer @relation(fields: [customerEmail], references: [email])
+  voucherRedemption VoucherRedemption?
+  formResponses     FormFieldResponse[] // Respuestas del formulario personalizado
+
+  @@map("bookings")
+}
+
+model Ticket {
+  id         String    @id @default(cuid())
+  ticketCode String    @unique
+  bookingId  String
+  status     String    @default("valid") // valid, used, cancelled
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  // Relaciones
+  booking    Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@map("tickets")
+}
+
+model Customer {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  phone         String?
+  totalBookings Int      @default(0)
+  totalSpent    Float    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relaciones
+  bookings      Booking[]
+
+  @@map("customers")
+}
+
+model EmailTemplate {
+  id        String   @id @default(cuid())
+  name      String   @unique // booking_confirmation, booking_reminder, etc.
+  subject   String
+  html      String
+  variables String   // campos dinámicos disponibles (JSON serializado)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // NUEVAS RELACIONES INVERSAS - Eventos que usan esta plantilla
+  eventsAsConfirmation   Event[] @relation("EventConfirmationTemplate")
+  eventsAsReminder      Event[] @relation("EventReminderTemplate")
+  eventsAsVoucher       Event[] @relation("EventVoucherTemplate")
+
+  @@map("email_templates")
+}
+
+model AdminUser {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String   // hash bcrypt
+  name      String
+  role      String   @default("admin")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("admin_users")
+}
+
+model AppSettings {
+  id                      String   @id @default(cuid())
+  key                     String   @unique
+  value                   String
+  type                    String   // 'string', 'number', 'boolean', 'json'
+  description             String?
+  category                String   @default("general") // general, vouchers, events, etc
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@map("app_settings")
+}
+
+// ================================
+// NUEVOS MODELOS - Sistema Vales Regalo (Agosto 2024)
+// ================================
+
+model GiftVoucher {
+  id                String    @id @default(cuid())
+  code              String    @unique // GIFT-XXXX-XXXX
+  type              String    // 'amount' | 'event' | 'pack'
+  
+  // Valor
+  originalAmount    Float     // Valor original
+  currentBalance    Float     // Saldo actual
+  eventId           String?   // Si es para evento específico
+  event             Event?    @relation(fields: [eventId], references: [id])
+  ticketQuantity    Int?      // Cantidad de tickets para eventos específicos
+  
+  // Comprador
+  purchaserName     String
+  purchaserEmail    String
+  purchaseDate      DateTime  @default(now())
+  stripePaymentId   String?
+  stripeSessionId   String?   // Stripe Checkout Session ID
+  paymentStatus     String    @default("pending") // pending, completed, failed
+  paidAt            DateTime? // Cuando se completó el pago
+  
+  // Destinatario y entrega
+  recipientName     String?
+  recipientEmail    String?
+  personalMessage   String?
+  deliveryDate      DateTime? // Para envío programado (cuando se creó)
+  scheduledDeliveryDate DateTime? // Para envío programado real
+  
+  // Estado
+  status            String    @default("pending") // pending, active, used, expired, cancelled
+  expiryDate        DateTime  // Por defecto 1 año
+  activatedAt       DateTime?
+  
+  // PDF
+  pdfUrl            String?   // URL del PDF generado
+  templateUsed      String    @default("elegant")
+  
+  // Email tracking
+  purchaserEmailSent    Boolean   @default(false)
+  purchaserEmailSentAt  DateTime?
+  recipientEmailSent    Boolean   @default(false)
+  recipientEmailSentAt  DateTime?
+  expirationReminderSent Boolean  @default(false)
+  downloadCount         Int       @default(0)
+  
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  
+  // Relaciones
+  redemptions       VoucherRedemption[]
+  
+  @@index([code])
+  @@index([purchaserEmail])
+  @@index([status, expiryDate])
+  @@map("gift_vouchers")
+}
+
+model VoucherRedemption {
+  id            String      @id @default(cuid())
+  voucherId     String
+  voucher       GiftVoucher @relation(fields: [voucherId], references: [id])
+  bookingId     String      @unique
+  booking       Booking     @relation(fields: [bookingId], references: [id])
+  amountUsed    Float
+  redeemedAt    DateTime    @default(now())
+  
+  @@index([voucherId])
+  @@map("voucher_redemptions")
+}
+
+// Modelo para campos de formulario personalizados por evento
+model EventFormField {
+  id            String   @id @default(cuid())
+  eventId       String
+  event         Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  
+  // Configuración del campo
+  label         String   // Etiqueta visible: "¿Tienes alergias alimentarias?"
+  fieldName     String   // Nombre interno: "allergies"
+  fieldType     String   // text, email, phone, dropdown, checkbox, radio, date, number, textarea
+  placeholder   String?  // Texto de ayuda
+  required      Boolean  @default(false)
+  
+  // Opciones para dropdowns, checkbox, radio
+  options       String?  // JSON array de opciones: ["Opción 1", "Opción 2"]
+  
+  // Validaciones
+  minLength     Int?
+  maxLength     Int?
+  minValue      Float?
+  maxValue      Float?
+  pattern       String?  // Regex para validación
+  
+  // Orden y estado
+  order         Int      @default(0)
+  active        Boolean  @default(true)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Respuestas de este campo
+  responses     FormFieldResponse[]
+  
+  @@unique([eventId, fieldName])
+  @@index([eventId])
+  @@map("event_form_fields")
+}
+
+// Modelo para almacenar las respuestas del formulario
+model FormFieldResponse {
+  id            String   @id @default(cuid())
+  bookingId     String
+  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  
+  fieldId       String
+  field         EventFormField @relation(fields: [fieldId], references: [id])
+  
+  // Valor de la respuesta (guardamos todo como texto)
+  value         String
+  
+  createdAt     DateTime @default(now())
+  
+  @@unique([bookingId, fieldId])
+  @@index([bookingId])
+  @@index([fieldId])
+  @@map("form_field_responses")
+}
